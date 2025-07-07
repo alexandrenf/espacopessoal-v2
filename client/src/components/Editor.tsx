@@ -19,8 +19,9 @@ const Editor = () => {
     const newYdoc = new Y.Doc()
     const documentName = process.env.NEXT_PUBLIC_DOCUMENT_NAME || 'example-document'
     
-    // Get WebSocket URL from environment or fallback to localhost
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || `ws://${window.location.hostname}:3000`
+    // Get WebSocket URL from environment or create secure fallback
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:3000`
     
     new IndexeddbPersistence(documentName, newYdoc)
 
