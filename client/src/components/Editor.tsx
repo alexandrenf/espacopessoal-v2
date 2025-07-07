@@ -1,4 +1,3 @@
-
 'use client'
 
 import { EditorContent, Editor as TiptapEditor } from '@tiptap/react'
@@ -22,6 +21,9 @@ const Editor = () => {
     // Get WebSocket URL from environment or create secure fallback
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
       `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:3000`
+    
+    console.log('🔗 WebSocket URL:', wsUrl)
+    console.log('📡 Environment WS URL:', process.env.NEXT_PUBLIC_WS_URL)
     
     new IndexeddbPersistence(documentName, newYdoc)
 
