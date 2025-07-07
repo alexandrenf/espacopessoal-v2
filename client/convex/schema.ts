@@ -10,9 +10,15 @@ export default defineSchema({
     roomId: v.optional(v.string()), // For HocusPocus room association
     createdAt: v.number(),
     updatedAt: v.number(),
+    // New fields for folder support
+    parentId: v.optional(v.id("documents")), // Reference to parent folder
+    order: v.number(), // For sorting within the same level
+    isFolder: v.boolean(), // true for folders, false for documents
   })
     .index("by_owner_id", ["ownerId"])
     .index("by_organization_id", ["organizationId"])
+    .index("by_parent_id", ["parentId"]) // New index for hierarchical queries
+    .index("by_parent_and_order", ["parentId", "order"]) // New index for ordered queries
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["ownerId", "organizationId"],

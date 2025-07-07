@@ -2,6 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { api } from "./_generated/api";
 
 // Simple user ID for demo purposes (since no auth yet)
 const DEFAULT_USER_ID = "demo-user";
@@ -11,18 +12,98 @@ export const create = mutation({
     title: v.optional(v.string()),
     initialContent: v.optional(v.string()),
     userId: v.optional(v.string()),
+    parentId: v.optional(v.id("documents")), // Parent folder
+    isFolder: v.optional(v.boolean()), // Whether this is a folder
   },
   handler: async (ctx, args) => {
     const userId = args.userId || DEFAULT_USER_ID;
     const now = Date.now();
+    const isFolder = args.isFolder || false;
+    
+    // Get the next order number for the parent
+    let order = 0;
+    if (args.parentId) {
+      // Verify parent exists and is a folder
+      const parent = await ctx.db.get(args.parentId);
+      if (!parent || !parent.isFolder) {
+        throw new ConvexError("Parent must be a folder");
+      }
+      
+      // Get the highest order in the parent folder
+      const siblings = await ctx.db
+        .query("documents")
+        .withIndex("by_parent_id", (q) => q.eq("parentId", args.parentId))
+        .collect();
+      order = siblings.length;
+    } else {
+      // Get the highest order in the root level
+      const siblings = await ctx.db
+        .query("documents")
+        .withIndex("by_parent_id", (q) => q.eq("parentId", undefined))
+        .filter((q) => q.eq(q.field("ownerId"), userId))
+        .collect();
+      order = siblings.length;
+    }
     
     return await ctx.db.insert("documents", {
-      title: args.title ?? "Untitled Document",
+      title: args.title ?? (isFolder ? "New Folder" : "Untitled Document"),
       ownerId: userId,
-      initialContent: args.initialContent,
+      initialContent: isFolder ? undefined : (args.initialContent || ""),
       roomId: undefined, // Will be set to document ID after creation
       createdAt: now,
       updatedAt: now,
+      parentId: args.parentId,
+      order,
+      isFolder,
+    });
+  },
+});
+
+export const createFolder = mutation({
+  args: {
+    title: v.optional(v.string()),
+    userId: v.optional(v.string()),
+    parentId: v.optional(v.id("documents")),
+  },
+  handler: async (ctx, args): Promise<Id<"documents">> => {
+    const userId = args.userId || DEFAULT_USER_ID;
+    const now = Date.now();
+    
+    // Get the next order number for the parent
+    let order = 0;
+    if (args.parentId) {
+      // Verify parent exists and is a folder
+      const parent = await ctx.db.get(args.parentId);
+      if (!parent || !parent.isFolder) {
+        throw new ConvexError("Parent must be a folder");
+      }
+      
+      // Get the highest order in the parent folder
+      const siblings = await ctx.db
+        .query("documents")
+        .withIndex("by_parent_id", (q) => q.eq("parentId", args.parentId))
+        .collect();
+      order = siblings.length;
+    } else {
+      // Get the highest order in the root level
+      const siblings = await ctx.db
+        .query("documents")
+        .withIndex("by_owner_id", (q) => q.eq("ownerId", userId))
+        .filter((q) => q.eq(q.field("parentId"), undefined))
+        .collect();
+      order = siblings.length;
+    }
+    
+    return await ctx.db.insert("documents", {
+      title: args.title || "New Folder",
+      ownerId: userId,
+      initialContent: undefined,
+      roomId: undefined,
+      createdAt: now,
+      updatedAt: now,
+      parentId: args.parentId,
+      order,
+      isFolder: true,
     });
   },
 });
@@ -50,6 +131,39 @@ export const get = query({
       .withIndex("by_owner_id", (q) => q.eq("ownerId", ownerId))
       .order("desc")
       .paginate(paginationOpts);
+  },
+});
+
+// New query to get hierarchical documents
+export const getHierarchical = query({
+  args: {
+    userId: v.optional(v.string()),
+    parentId: v.optional(v.id("documents")),
+  },
+  handler: async (ctx, { userId, parentId }) => {
+    const ownerId = userId || DEFAULT_USER_ID;
+    
+    return await ctx.db
+      .query("documents")
+      .withIndex("by_parent_id", (q) => q.eq("parentId", parentId))
+      .filter((q) => q.eq(q.field("ownerId"), ownerId))
+      .order("asc")
+      .collect();
+  },
+});
+
+// Get all documents in a flat structure for the tree
+export const getAllForTree = query({
+  args: {
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, { userId }) => {
+    const ownerId = userId || DEFAULT_USER_ID;
+    
+    return await ctx.db
+      .query("documents")
+      .withIndex("by_owner_id", (q) => q.eq("ownerId", ownerId))
+      .collect();
   },
 });
 
@@ -88,6 +202,43 @@ export const updateById = mutation({
   },
 });
 
+// Update document structure (for drag and drop)
+export const updateStructure = mutation({
+  args: {
+    updates: v.array(v.object({
+      id: v.id("documents"),
+      parentId: v.optional(v.id("documents")),
+      order: v.number(),
+    })),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, { updates, userId }) => {
+    // Verify all documents exist and belong to the user
+    const userId_ = userId || DEFAULT_USER_ID;
+    
+    for (const update of updates) {
+      const document = await ctx.db.get(update.id);
+      if (!document || document.ownerId !== userId_) {
+        throw new ConvexError(`Document ${update.id} not found or access denied`);
+      }
+      
+      // If parentId is specified, verify it's a folder
+      if (update.parentId) {
+        const parent = await ctx.db.get(update.parentId);
+        if (!parent || !parent.isFolder || parent.ownerId !== userId_) {
+          throw new ConvexError(`Parent folder ${update.parentId} not found or not a folder`);
+        }
+      }
+      
+      await ctx.db.patch(update.id, {
+        parentId: update.parentId,
+        order: update.order,
+        updatedAt: Date.now(),
+      });
+    }
+  },
+});
+
 export const removeById = mutation({
   args: {
     id: v.id("documents"),
@@ -97,6 +248,18 @@ export const removeById = mutation({
     const document = await ctx.db.get(args.id);
     if (!document) {
       throw new ConvexError("Document not found!");
+    }
+    
+    // If it's a folder, check if it has children
+    if (document.isFolder) {
+      const children = await ctx.db
+        .query("documents")
+        .withIndex("by_parent_id", (q) => q.eq("parentId", args.id))
+        .collect();
+      
+      if (children.length > 0) {
+        throw new ConvexError("Cannot delete folder with items inside. Please move or delete all items first.");
+      }
     }
     
     return await ctx.db.delete(args.id);
@@ -190,6 +353,9 @@ export const updateContentInternal = internalMutation({
             roomId: args.id,
             createdAt: now,
             updatedAt: now,
+            parentId: undefined,
+            order: 0,
+            isFolder: false,
           });
           
           console.log(`Successfully created new document with ID: ${newDocumentId}`);

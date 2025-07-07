@@ -34,7 +34,9 @@ import {
   Underline as UnderlineIcon,
   Strikethrough,
   Text,
-  RemoveFormatting
+  RemoveFormatting,
+  Menu,
+  PanelLeft
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -73,6 +75,7 @@ import { ImageResize } from "tiptap-extension-resize-image";
 import { Ruler } from "./Ruler";
 import { Threads } from "./Threads";
 import { Toolbar } from "./Toolbar";
+import DocumentSidebar from "./DocumentSidebar";
 import { useEditorStore } from "@/store/use-editor-store";
 import { LEFT_MARGIN_DEFAULT, RIGHT_MARGIN_DEFAULT } from "@/constants/margins";
 
@@ -85,6 +88,9 @@ type Document = {
   organizationId?: string;
   initialContent?: string;
   roomId?: string;
+  parentId?: Id<"documents">;
+  order: number;
+  isFolder: boolean;
 };
 
 interface EditorProps {
@@ -105,6 +111,24 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   // Margin state
   const [leftMargin, setLeftMargin] = useState(LEFT_MARGIN_DEFAULT);
   const [rightMargin, setRightMargin] = useState(RIGHT_MARGIN_DEFAULT);
+
+  // Sidebar state
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Check if mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setShowSidebar(false); // Hide sidebar on mobile by default
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   
   const { setEditor, setUndoManager } = useEditorStore();
   const updateDocument = useMutation(api.documents.updateById);
@@ -389,6 +413,19 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     toast.info("Documents are automatically saved by the server after 2 seconds of inactivity");
   };
 
+  // Sidebar handlers
+  const handleToggleSidebar = () => {
+    setShowSidebar(!showSidebar);
+  };
+
+  const handleNavigateToHome = () => {
+    window.location.href = '/';
+  };
+
+  const handleSetCurrentDocument = (documentId: Id<"documents">) => {
+    window.location.href = `/documents/${documentId}`;
+  };
+
   // Enhanced connection status indicator
   const getStatusIcon = () => {
     switch (status) {
@@ -432,18 +469,41 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   }
 
   return (
-    <div className="min-h-screen bg-[#F9FBFD]">
-      {/* Enhanced header with better status indicators */}
-      <header className="border-b bg-white px-4 py-3">
-        <div className="max-w-6xl mx-auto">
-          {/* Title and controls row */}
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/">
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              </Button>
+    <div className="min-h-screen bg-[#F9FBFD] flex">
+      {/* Sidebar */}
+      {showSidebar && (
+        <div className={`${isMobile ? 'fixed inset-0 z-50 bg-white' : 'w-80 border-r bg-white'}`}>
+          <DocumentSidebar
+            currentDocument={doc}
+            setCurrentDocumentId={handleSetCurrentDocument}
+            onToggleSidebar={handleToggleSidebar}
+            showSidebar={showSidebar}
+            isMobile={isMobile}
+            onNavigateToHome={handleNavigateToHome}
+          />
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0">
+        {/* Enhanced header with better status indicators */}
+        <header className="border-b bg-white px-4 py-3">
+          <div className="max-w-6xl mx-auto">
+            {/* Title and controls row */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-4">
+                {!showSidebar && (
+                  <Button variant="ghost" size="icon" onClick={handleToggleSidebar}>
+                    <PanelLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                {!showSidebar && (
+                  <Button variant="ghost" size="icon" asChild>
+                    <Link href="/">
+                      <ArrowLeft className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
               {isEditingTitle ? (
                 <input
                   type="text"
@@ -682,6 +742,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
           <EditorContent editor={editor} />
           <Threads editor={editor} />
         </div>
+      </div>
       </div>
     </div>
   );

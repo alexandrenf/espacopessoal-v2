@@ -607,22 +607,6 @@ export function Toolbar() {
           }
         },
       },
-      {
-        label: "Print",
-        icon: Printer,
-        onClick: () => window.print(),
-      },
-      {
-        label: "Spell Check",
-        icon: SpellCheck,
-        onClick: () => {
-          const current = editor?.view.dom.getAttribute("spellcheck");
-          editor?.view.dom.setAttribute(
-            "spellcheck",
-            current === "false" ? "true" : "false"
-          );
-        },
-      },
     ],
     [
       {
@@ -657,15 +641,6 @@ export function Toolbar() {
       },
     ],
     [
-      {
-        label: "Comment",
-        icon: MessageSquarePlus,
-        onClick: () => {
-          // Placeholder for comment functionality
-          console.log("Comment functionality not implemented yet");
-        },
-        isActive: false,
-      },
       {
         label: "List Todo",
         icon: ListTodo,

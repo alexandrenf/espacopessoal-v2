@@ -183,3 +183,110 @@ body {
 .ProseMirror p:last-child {
   margin-bottom: 0;
 }
+
+/* Print styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .print\\:block {
+    display: block !important;
+  }
+  
+  .print\\:hidden {
+    display: none !important;
+  }
+  
+  .print\\:p-0 {
+    padding: 0 !important;
+  }
+  
+  .print\\:bg-white {
+    background-color: white !important;
+  }
+  
+  .print\\:border-0 {
+    border: none !important;
+  }
+  
+  .print\\:overflow-visible {
+    overflow: visible !important;
+  }
+  
+  .print\\:py-0 {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  
+  .print\\:w-full {
+    width: 100% !important;
+  }
+  
+  .print\\:min-w-0 {
+    min-width: 0 !important;
+  }
+}
+
+/* Custom tree styles */
+.custom-tree-container {
+  @apply p-2;
+}
+
+.custom-tree .rc-tree-list-holder {
+  @apply overflow-visible;
+}
+
+.custom-tree .rc-tree-treenode {
+  @apply py-1;
+}
+
+.custom-tree .rc-tree-node-content-wrapper {
+  @apply w-full cursor-pointer rounded-md transition-colors;
+}
+
+.custom-tree .rc-tree-node-selected .rc-tree-node-content-wrapper {
+  @apply bg-transparent;
+}
+
+.custom-tree .rc-tree-switcher {
+  @apply flex items-center justify-center w-4 h-4 cursor-pointer;
+}
+
+.custom-tree .rc-tree-switcher-noop {
+  @apply cursor-default;
+}
+
+.custom-tree .rc-tree-indent-unit {
+  @apply w-4;
+}
+
+.custom-tree .rc-tree-draggable-icon {
+  @apply hidden;
+}
+
+/* Drop indicator styles */
+.custom-tree .rc-tree-drop-indicator {
+  @apply absolute bg-blue-600 h-0.5 pointer-events-none transition-all duration-150 z-10;
+}
+
+.custom-tree .rc-tree-drop-container .rc-tree-drop-indicator {
+  @apply bg-blue-400 h-1 rounded-sm;
+}
+
+/* Drag styles */
+.custom-tree .rc-tree-treenode-drag-over {
+  @apply bg-blue-50;
+}
+
+.custom-tree .rc-tree-treenode-drag-over-gap-top {
+  @apply border-t-2 border-blue-600;
+}
+
+.custom-tree .rc-tree-treenode-drag-over-gap-bottom {
+  @apply border-b-2 border-blue-600;
+}
+
+.custom-tree .rc-tree-treenode-dragging {
+  @apply opacity-50;
+}
