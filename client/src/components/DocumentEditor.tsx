@@ -1,7 +1,7 @@
 "use client";
 
-import { EditorContent, Editor as TiptapEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
+import { EditorContent, useEditor } from '@tiptap/react';
+import { StarterKit } from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useMutation } from 'convex/react';
@@ -12,8 +12,34 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { ArrowLeft, Bold, Italic, Strikethrough, Code, List, ListOrdered, Undo2, Redo2, Wifi, WifiOff, Save, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Wifi, WifiOff, Save, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
+
+// TipTap Extensions
+import { FontSizeExtension } from "@/extensions/font-size";
+import { LineHeightExtension } from "@/extensions/line-height";
+import { Color } from "@tiptap/extension-color";
+import { FontFamily } from "@tiptap/extension-font-family";
+import { Heading } from "@tiptap/extension-heading";
+import { Highlight } from "@tiptap/extension-highlight";
+import { Link as LinkExtension } from "@tiptap/extension-link";
+import { Table } from "@tiptap/extension-table";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TaskItem } from "@tiptap/extension-task-item";
+import { TaskList } from "@tiptap/extension-task-list";
+import { TextAlign } from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import { Underline } from "@tiptap/extension-underline";
+import { ImageResize } from "tiptap-extension-resize-image";
+
+// Components
+import { Ruler } from "./Ruler";
+import { Threads } from "./Threads";
+import { Toolbar } from "./Toolbar";
+import { useEditorStore } from "@/store/use-editor-store";
+import { LEFT_MARGIN_DEFAULT, RIGHT_MARGIN_DEFAULT } from "@/constants/margins";
 
 type Document = {
   _id: Id<"documents">;
@@ -26,28 +52,38 @@ type Document = {
   roomId?: string;
 };
 
-interface DocumentEditorProps {
+interface EditorProps {
   document: Document;
+  initialContent?: string | undefined;
+  isReadOnly?: boolean;
 }
 
-export function DocumentEditor({ document }: DocumentEditorProps) {
+export function DocumentEditor({ document, initialContent, isReadOnly }: EditorProps) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
-  const editorRef = useRef<TiptapEditor | null>(null);
   const providerRef = useRef<HocuspocusProvider | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
-  const [editorReady, setEditorReady] = useState(false);
   const [documentTitle, setDocumentTitle] = useState(document.title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
+  // Margin state
+  const [leftMargin, setLeftMargin] = useState(LEFT_MARGIN_DEFAULT);
+  const [rightMargin, setRightMargin] = useState(RIGHT_MARGIN_DEFAULT);
+  
+  const { setEditor } = useEditorStore();
   const updateDocument = useMutation(api.documents.updateById);
   const updateContent = useMutation(api.documents.updateContent);
 
   // Enhanced content saving with better conflict resolution
   const saveContentRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedContentRef = useRef<string>('');
+
+  // Initialize Y.js document
+  if (!ydocRef.current) {
+    ydocRef.current = new Y.Doc();
+  }
   
   const saveContent = useCallback((content: string) => {
     // Skip save if content hasn't changed
@@ -90,10 +126,82 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
   }, [document._id, updateContent, isSaving]);
 
   // Enhanced WebSocket and Y.js integration
+  const editor = useEditor({
+    autofocus: !isReadOnly,
+    immediatelyRender: false,
+    editable: !isReadOnly,
+    onCreate({ editor }) {
+      setEditor(editor);
+    },
+    onDestroy() {
+      setEditor(null);
+    },
+    onUpdate({ editor, transaction }) {
+      setEditor(editor);
+      // Only save if the transaction has content changes (not just selection changes)
+      if (transaction.docChanged) {
+        const content = editor.getHTML();
+        saveContent(content);
+      }
+    },
+    onSelectionUpdate({ editor }) {
+      setEditor(editor);
+    },
+    onTransaction({ editor }) {
+      setEditor(editor);
+    },
+    onFocus({ editor }) {
+      setEditor(editor);
+    },
+    onBlur({ editor }) {
+      setEditor(editor);
+    },
+    onContentError({ editor }) {
+      setEditor(editor);
+    },
+    editorProps: {
+      attributes: {
+        style: `padding-left: ${leftMargin}px; padding-right: ${rightMargin}px;`,
+        class: `focus:outline-none print:border-0 bg-white border border-[#C7C7C7] flex flex-col min-h-[1054px] w-[816px] pt-10 pr-14 pb-10 cursor-text`,
+      },
+    },
+    extensions: [
+      StarterKit.configure({
+        history: false,
+        heading: false,
+      }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      Table,
+      TableCell,
+      TableHeader,
+      TableRow,
+      ImageResize,
+      Underline,
+      FontFamily,
+      TextStyle,
+      Heading,
+      Highlight.configure({ multicolor: true }),
+      Color,
+      LinkExtension.configure({
+        openOnClick: false,
+        autolink: true,
+        defaultProtocol: "https",
+      }),
+      TextAlign.configure({
+        types: ["heading", "paragraph"],
+      }),
+      FontSizeExtension,
+      LineHeightExtension,
+             Collaboration.configure({
+         document: ydocRef.current,
+       }),
+    ],
+  });
+
   useEffect(() => {
-    const newYdoc = new Y.Doc();
+    const ydoc = ydocRef.current!;
     const documentName = document._id;
-    ydocRef.current = newYdoc;
     
     // Get WebSocket URL from environment or create secure fallback
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
@@ -103,7 +211,7 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
     console.log('📄 Document ID:', documentName);
     
     // Enhanced IndexedDB persistence with error handling
-    const persistence = new IndexeddbPersistence(documentName, newYdoc);
+    const persistence = new IndexeddbPersistence(documentName, ydoc);
     
     persistence.on('update', () => {
       console.log('📦 Document loaded from IndexedDB');
@@ -113,7 +221,7 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
     const newProvider = new HocuspocusProvider({
       url: wsUrl,
       name: documentName,
-      document: newYdoc,
+      document: ydoc,
     });
 
     providerRef.current = newProvider;
@@ -151,49 +259,15 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
       toast.error("Connection error occurred");
     });
 
-    // Enhanced TipTap editor with better collaboration features
-    const tiptapEditor = new TiptapEditor({
-      extensions: [
-        StarterKit.configure({
-          history: false, // Disable built-in history for Y.js compatibility
-        }),
-        Collaboration.configure({
-          document: newYdoc,
-        }),
-      ],
-      editorProps: {
-        attributes: {
-          class: 'focus:outline-none print:border-0 bg-white border border-[#C7C7C7] flex flex-col min-h-[1054px] w-[816px] pt-10 pr-14 pb-10 pl-14 cursor-text prose prose-lg max-w-none',
-        },
-      },
-      // Enhanced content change detection - only save when content actually changes
-      onUpdate: ({ editor, transaction }) => {
-        // Only save if the transaction has content changes (not just selection changes)
-        if (transaction.docChanged) {
-          const content = editor.getHTML();
-          saveContent(content);
-        }
-      },
-      onSelectionUpdate: () => {
-        // Track user activity for better UX
-      },
-    });
-
     // Load initial content if available and Y.js is empty
-    if (document.initialContent && tiptapEditor) {
-      const yXmlText = newYdoc.getXmlFragment('document');
-      
-      // Only set initial content if the document is empty
+    if ((document.initialContent || initialContent) && editor) {
       setTimeout(() => {
-        if (tiptapEditor.isEmpty) {
-          tiptapEditor.commands.setContent(document.initialContent || '');
-          lastSavedContentRef.current = document.initialContent || '';
+        if (editor.isEmpty) {
+          editor.commands.setContent(document.initialContent || initialContent || '');
+          lastSavedContentRef.current = document.initialContent || initialContent || '';
         }
       }, 100);
     }
-
-    editorRef.current = tiptapEditor;
-    setEditorReady(true);
 
     // Cleanup function
     return () => {
@@ -206,14 +280,11 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
       if (newProvider) {
         newProvider.destroy();
       }
-      if (newYdoc) {
-        newYdoc.destroy();
-      }
-      if (tiptapEditor) {
-        tiptapEditor.destroy();
+      if (ydoc) {
+        ydoc.destroy();
       }
     };
-  }, [document._id, document.initialContent]); // Removed saveContent from dependencies
+  }, [document._id, document.initialContent, initialContent, editor]);
 
   // Enhanced title handling
   const handleTitleSubmit = async () => {
@@ -243,8 +314,8 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
 
   // Force save function for manual saves
   const handleForceSave = async () => {
-    if (editorRef.current && !isSaving) {
-      const content = editorRef.current.getHTML();
+    if (editor && !isSaving) {
+      const content = editor.getHTML();
       
       // Clear any pending auto-save
       if (saveContentRef.current) {
@@ -273,19 +344,6 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
     }
   };
 
-  if (!editorReady || !editorRef.current) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading collaborative editor...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const editor = editorRef.current;
-  
   // Enhanced connection status indicator
   const getStatusIcon = () => {
     switch (status) {
@@ -316,6 +374,17 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
         return 'Unknown';
     }
   };
+
+  if (!editor) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading collaborative editor...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F9FBFD]">
@@ -400,111 +469,36 @@ export function DocumentEditor({ document }: DocumentEditorProps) {
         </div>
       </header>
 
-      {/* Enhanced toolbar with better visual feedback */}
-      <div className="border-b bg-white px-4 py-2">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-2 overflow-x-auto">
-            {/* Undo/Redo */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().undo().run()}
-              disabled={!editor.can().undo()}
-              title="Undo"
-            >
-              <Undo2 className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => editor.chain().focus().redo().run()}
-              disabled={!editor.can().redo()}
-              title="Redo"
-            >
-              <Redo2 className="h-4 w-4" />
-            </Button>
-            
-            <div className="h-6 w-[1px] bg-border" />
-            
-            {/* Text formatting with enhanced visual feedback */}
-            <Button
-              variant={editor.isActive('bold') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              title="Bold"
-            >
-              <Bold className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={editor.isActive('italic') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              title="Italic"
-            >
-              <Italic className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={editor.isActive('strike') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleStrike().run()}
-              title="Strikethrough"
-            >
-              <Strikethrough className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={editor.isActive('code') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleCode().run()}
-              title="Code"
-            >
-              <Code className="h-4 w-4" />
-            </Button>
-            
-            <div className="h-6 w-[1px] bg-border" />
-            
-            {/* Lists */}
-            <Button
-              variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleBulletList().run()}
-              title="Bullet List"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => editor.chain().focus().toggleOrderedList().run()}
-              title="Numbered List"
-            >
-              <ListOrdered className="h-4 w-4" />
-            </Button>
-          </div>
+      {/* Editor Container - Exactly like the reference */}
+      <div className="size-full overflow-x-auto bg-[#F9FBFD] px-4 print:p-0 print:bg-white print:overflow-visible">
+        <div className="max-w-[816px] mx-auto">
+          <Toolbar />
+        </div>
+        <Ruler 
+          leftMargin={leftMargin}
+          rightMargin={rightMargin}
+          onLeftMarginChange={setLeftMargin}
+          onRightMarginChange={setRightMargin}
+        />
+        <div className="min-w-max flex justify-center w-[816px] py-4 print:py-0 mx-auto print:w-full print:min-w-0">
+          {/* Loading overlay for connection issues */}
+          {status !== 'connected' && status !== 'connecting' && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
+              <div className="text-center">
+                <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+                <p className="text-sm font-medium text-red-600 mb-1">
+                  {status === 'error' ? 'Connection Error' : 'Offline Mode'}
+                </p>
+                <p className="text-xs text-gray-600">
+                  Real-time collaboration unavailable
+                </p>
+              </div>
+            </div>
+          )}
+          <EditorContent editor={editor} />
+          <Threads editor={editor} />
         </div>
       </div>
-
-      {/* Enhanced editor container with better visual design */}
-      <main className="flex-1 overflow-x-auto bg-[#F9FBFD] px-4 py-4">
-        <div className="min-w-max flex justify-center mx-auto">
-          <div className="bg-white shadow-sm relative">
-            {/* Loading overlay for connection issues */}
-            {status !== 'connected' && status !== 'connecting' && (
-              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
-                <div className="text-center">
-                  <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-red-600 mb-1">
-                    {status === 'error' ? 'Connection Error' : 'Offline Mode'}
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    Real-time collaboration unavailable
-                  </p>
-                </div>
-              </div>
-            )}
-            <EditorContent editor={editor} />
-          </div>
-        </div>
-      </main>
     </div>
   );
 } 
