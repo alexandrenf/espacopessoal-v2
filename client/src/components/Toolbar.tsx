@@ -39,6 +39,7 @@ import {
   LucideIcon,
   MessageSquarePlus,
   Minus,
+  Table,
   Plus,
   Printer,
   Redo2,
@@ -579,7 +580,7 @@ function ToolbarButton({
 }
 
 export function Toolbar() {
-  const { editor } = useEditorStore();
+  const { editor, undoManager } = useEditorStore();
 
   const sections: {
     label: string;
@@ -591,12 +592,20 @@ export function Toolbar() {
       {
         label: "Undo",
         icon: Undo2,
-        onClick: () => editor?.chain().focus().undo().run(),
+        onClick: () => {
+          if (undoManager?.canUndo()) {
+            undoManager.undo();
+          }
+        },
       },
       {
         label: "Redo",
         icon: Redo2,
-        onClick: () => editor?.chain().focus().redo().run(),
+        onClick: () => {
+          if (undoManager?.canRedo()) {
+            undoManager.redo();
+          }
+        },
       },
       {
         label: "Print",
@@ -662,6 +671,12 @@ export function Toolbar() {
         icon: ListTodo,
         onClick: () => editor?.chain().focus().toggleTaskList().run(),
         isActive: editor?.isActive("taskList"),
+      },
+      {
+        label: "Insert Table",
+        icon: Table,
+        onClick: () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+        isActive: editor?.isActive("table"),
       },
       {
         label: "Remove Formatting",

@@ -10,6 +10,7 @@ import { Id } from '../../convex/_generated/dataModel';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import { UndoManager } from 'yjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { 
@@ -96,6 +97,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const providerRef = useRef<HocuspocusProvider | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
+  const undoManagerRef = useRef<UndoManager | null>(null);
   const [documentTitle, setDocumentTitle] = useState(doc.title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   // Note: Save state is no longer tracked client-side since server handles saving
@@ -104,7 +106,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   const [leftMargin, setLeftMargin] = useState(LEFT_MARGIN_DEFAULT);
   const [rightMargin, setRightMargin] = useState(RIGHT_MARGIN_DEFAULT);
   
-  const { setEditor } = useEditorStore();
+  const { setEditor, setUndoManager } = useEditorStore();
   const updateDocument = useMutation(api.documents.updateById);
   // Note: updateContent is now handled by the Hocus Pocus server
 
@@ -201,35 +203,68 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     },
     extensions: [
       StarterKit.configure({
-        history: false,
-        heading: false,
+        history: false, // Disable StarterKit history to avoid conflicts with Collaboration
+        heading: false, // Disable StarterKit heading to use our custom Heading extension
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Table,
-      TableCell,
-      TableHeader,
-      TableRow,
+      Table.configure({
+        resizable: true,
+        handleWidth: 5,
+        cellMinWidth: 50,
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 p-2',
+        },
+      }),
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 p-2 bg-gray-100 font-bold',
+        },
+      }),
+      TableRow.configure({
+        HTMLAttributes: {
+          class: 'border-b border-gray-300',
+        },
+      }),
       ImageResize,
       Underline,
       FontFamily,
       TextStyle,
-      Heading,
-      Highlight.configure({ multicolor: true }),
-      Color,
+      Heading.configure({
+        levels: [1, 2, 3, 4, 5, 6],
+        HTMLAttributes: {
+          class: 'heading',
+        },
+      }),
+      Highlight.configure({ 
+        multicolor: true,
+        HTMLAttributes: {
+          class: 'highlight',
+        },
+      }),
+      Color.configure({
+        types: ['textStyle'],
+      }),
       LinkExtension.configure({
         openOnClick: false,
         autolink: true,
         defaultProtocol: "https",
+        HTMLAttributes: {
+          class: 'text-blue-600 underline cursor-pointer',
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
       }),
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
       FontSizeExtension,
       LineHeightExtension,
-             Collaboration.configure({
-         document: ydocRef.current,
-       }),
+      Collaboration.configure({
+        document: ydocRef.current,
+      }),
     ],
   });
 
@@ -259,6 +294,13 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     });
 
     providerRef.current = newProvider;
+
+    // Create Y.js UndoManager for collaborative undo/redo
+    const undoManager = new UndoManager(ydoc.getXmlFragment('default'), {
+      captureTimeout: 1000,
+    });
+    undoManagerRef.current = undoManager;
+    setUndoManager(undoManager);
 
     // Enhanced status tracking
     newProvider.on('status', (event: { status: string }) => {
@@ -306,6 +348,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     return () => {
       console.log('🧹 Cleaning up editor and connections');
       
+      setUndoManager(null);
       if (newProvider) {
         newProvider.destroy();
       }
