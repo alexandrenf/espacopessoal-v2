@@ -12,8 +12,42 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { ArrowLeft, Wifi, WifiOff, Save, AlertCircle } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Wifi, 
+  WifiOff, 
+  Save, 
+  AlertCircle,
+  File,
+  FilePlus,
+  FilePen,
+  FileText,
+  FileJson,
+  Globe,
+  Printer,
+  Trash,
+  Undo2,
+  Redo2,
+  Bold,
+  Italic,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Text,
+  RemoveFormatting
+} from 'lucide-react';
 import { Button } from './ui/button';
+import {
+  Menubar,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarSeparator,
+  MenubarShortcut,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
+  MenubarTrigger,
+} from "@/components/ui/menubar";
 
 // TipTap Extensions
 import { FontSizeExtension } from "@/extensions/font-size";
@@ -58,11 +92,11 @@ interface EditorProps {
   isReadOnly?: boolean;
 }
 
-export function DocumentEditor({ document, initialContent, isReadOnly }: EditorProps) {
+export function DocumentEditor({ document: doc, initialContent, isReadOnly }: EditorProps) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const providerRef = useRef<HocuspocusProvider | null>(null);
   const ydocRef = useRef<Y.Doc | null>(null);
-  const [documentTitle, setDocumentTitle] = useState(document.title);
+  const [documentTitle, setDocumentTitle] = useState(doc.title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -79,6 +113,51 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
   // Enhanced content saving with better conflict resolution
   const saveContentRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedContentRef = useRef<string>('');
+
+  // Menu actions
+  const onSaveJSON = () => {
+    if (!editor) return;
+    const content = editor.getJSON();
+    const blob = new Blob([JSON.stringify(content, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.title}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onSaveHTML = () => {
+    if (!editor) return;
+    const content = editor.getHTML();
+    const blob = new Blob([content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.title}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onSaveText = () => {
+    if (!editor) return;
+    const content = editor.getText();
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.title}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onNewDocument = () => {
+    window.open('/', '_blank');
+  };
+
+  const insertTable = ({ rows, cols }: { rows: number; cols: number }) => {
+    editor?.chain().focus().insertTable({ rows, cols, withHeaderRow: false }).run();
+  };
 
   // Initialize Y.js document
   if (!ydocRef.current) {
@@ -104,7 +183,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
       try {
         setIsSaving(true);
         await updateContent({ 
-          id: document._id, 
+          id: doc._id, 
           content 
         });
         
@@ -123,7 +202,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
         setIsSaving(false);
       }
     }, 2000); // Save after 2 seconds of inactivity
-  }, [document._id, updateContent, isSaving]);
+  }, [doc._id, updateContent, isSaving]);
 
   // Enhanced WebSocket and Y.js integration
   const editor = useEditor({
@@ -201,7 +280,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
 
   useEffect(() => {
     const ydoc = ydocRef.current!;
-    const documentName = document._id;
+    const documentName = doc._id;
     
     // Get WebSocket URL from environment or create secure fallback
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 
@@ -260,11 +339,11 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
     });
 
     // Load initial content if available and Y.js is empty
-    if ((document.initialContent || initialContent) && editor) {
+    if ((doc.initialContent || initialContent) && editor) {
       setTimeout(() => {
         if (editor.isEmpty) {
-          editor.commands.setContent(document.initialContent || initialContent || '');
-          lastSavedContentRef.current = document.initialContent || initialContent || '';
+          editor.commands.setContent(doc.initialContent || initialContent || '');
+          lastSavedContentRef.current = doc.initialContent || initialContent || '';
         }
       }, 100);
     }
@@ -284,20 +363,20 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
         ydoc.destroy();
       }
     };
-  }, [document._id, document.initialContent, initialContent, editor]);
+  }, [doc._id, doc.initialContent, initialContent, editor]);
 
   // Enhanced title handling
   const handleTitleSubmit = async () => {
-    if (documentTitle.trim() && documentTitle !== document.title) {
+    if (documentTitle.trim() && documentTitle !== doc.title) {
       try {
         await updateDocument({ 
-          id: document._id, 
+          id: doc._id, 
           title: documentTitle.trim() 
         });
         toast.success("Document title updated!");
       } catch (error) {
         toast.error("Failed to update title");
-        setDocumentTitle(document.title); // Revert on error
+        setDocumentTitle(doc.title); // Revert on error
       }
     }
     setIsEditingTitle(false);
@@ -307,7 +386,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
     if (e.key === 'Enter') {
       handleTitleSubmit();
     } else if (e.key === 'Escape') {
-      setDocumentTitle(document.title);
+      setDocumentTitle(doc.title);
       setIsEditingTitle(false);
     }
   };
@@ -326,7 +405,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
       try {
         setIsSaving(true);
         await updateContent({ 
-          id: document._id, 
+          id: doc._id, 
           content 
         });
         
@@ -463,7 +542,7 @@ export function DocumentEditor({ document, initialContent, isReadOnly }: EditorP
             </Button>
             
             <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
-              {document.ownerId.charAt(0).toUpperCase()}
+              {doc.ownerId.charAt(0).toUpperCase()}
             </div>
           </div>
         </div>
