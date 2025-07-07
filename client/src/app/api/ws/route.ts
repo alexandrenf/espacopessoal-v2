@@ -1,31 +1,20 @@
 import { NextResponse } from 'next/server'
-import httpProxy from 'http-proxy'
-import { IncomingMessage } from 'http'
-import { Duplex } from 'stream'
 
-const proxy = httpProxy.createProxyServer({
-  target: 'ws://127.0.0.1:3000',
-  ws: true,
-})
-
-export async function GET() {
-  return new Promise((resolve) => {
-    const res = NextResponse.json({ message: 'WebSocket endpoint' })
-    
-    // Note: This approach may not work as expected in Next.js App Router
-    // WebSocket upgrades typically need to be handled at the server level
-    const serverRes = res as unknown as {
-      socket: {
-        server: {
-          on: (event: string, callback: (req: IncomingMessage, socket: Duplex, head: Buffer) => void) => void
-        }
-      }
-    }
-    
-    serverRes.socket.server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-      proxy.ws(req, socket, head)
+export async function GET(): Promise<Response> {
+  // Note: WebSocket upgrades cannot be handled directly in Next.js App Router API routes
+  // This endpoint serves as a fallback for HTTP requests to the WebSocket endpoint
+  
+  try {
+    // Set up proxy for WebSocket upgrade handling if the server supports it
+    // This is more of a placeholder since true WebSocket handling needs to be at the server level
+    return NextResponse.json({ 
+      message: 'WebSocket endpoint available',
+      wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3000'
     })
-    
-    resolve(res)
-  })
+  } catch {
+    return NextResponse.json(
+      { error: 'WebSocket setup failed' },
+      { status: 500 }
+    )
+  }
 }
