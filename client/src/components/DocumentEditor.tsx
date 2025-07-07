@@ -469,81 +469,240 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     <div className="min-h-screen bg-[#F9FBFD]">
       {/* Enhanced header with better status indicators */}
       <header className="border-b bg-white px-4 py-3">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" asChild>
-              <Link href="/">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            {isEditingTitle ? (
-              <input
-                type="text"
-                value={documentTitle}
-                onChange={(e) => setDocumentTitle(e.target.value)}
-                onBlur={handleTitleSubmit}
-                onKeyDown={handleTitleKeyDown}
-                className="text-lg font-semibold bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
-                autoFocus
-              />
-            ) : (
-              <h1 
-                className="text-lg font-semibold cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
-                onClick={() => setIsEditingTitle(true)}
+        <div className="max-w-6xl mx-auto">
+          {/* Title and controls row */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" asChild>
+                <Link href="/">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+              {isEditingTitle ? (
+                <input
+                  type="text"
+                  value={documentTitle}
+                  onChange={(e) => setDocumentTitle(e.target.value)}
+                  onBlur={handleTitleSubmit}
+                  onKeyDown={handleTitleKeyDown}
+                  className="text-lg font-semibold bg-transparent border-none outline-none focus:bg-gray-50 px-2 py-1 rounded"
+                  autoFocus
+                />
+              ) : (
+                <h1 
+                  className="text-lg font-semibold cursor-pointer hover:bg-gray-50 px-2 py-1 rounded"
+                  onClick={() => setIsEditingTitle(true)}
+                >
+                  {documentTitle}
+                </h1>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-4">
+              {/* Save status indicator */}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin h-3 w-3 border border-blue-500 border-t-transparent rounded-full" />
+                    <span>Saving...</span>
+                  </>
+                ) : hasUnsavedChanges ? (
+                  <>
+                    <Save className="h-3 w-3 text-orange-500" />
+                    <span>Unsaved changes</span>
+                  </>
+                ) : lastSaved ? (
+                  <>
+                    <Save className="h-3 w-3 text-green-500" />
+                    <span>Saved {lastSaved.toLocaleTimeString()}</span>
+                  </>
+                ) : null}
+              </div>
+              
+              {/* Enhanced connection status */}
+              <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                status === 'connected' 
+                  ? 'bg-green-100 text-green-800' 
+                  : status === 'connecting'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-red-100 text-red-800'
+              }`}>
+                {getStatusIcon()}
+                <span>{getStatusText()}</span>
+              </div>
+              
+              {/* Manual save button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleForceSave}
+                disabled={isSaving || !hasUnsavedChanges}
+                className="text-xs"
               >
-                {documentTitle}
-              </h1>
-            )}
+                <Save className="h-3 w-3 mr-1" />
+                Save
+              </Button>
+              
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
+                {doc.ownerId.charAt(0).toUpperCase()}
+              </div>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-4">
-            {/* Save status indicator */}
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {isSaving ? (
+
+          {/* Menu bar row */}
+          <div className="flex">
+            <Menubar className="border-none bg-transparent shadow-none h-auto p-0">
+              {!isReadOnly && (
                 <>
-                  <div className="animate-spin h-3 w-3 border border-blue-500 border-t-transparent rounded-full" />
-                  <span>Saving...</span>
+                  <MenubarMenu>
+                    <MenubarTrigger className="text-sm font-normal py-0.5 px-[7px] rounded-sm hover:bg-muted h-auto">
+                      Arquivo
+                    </MenubarTrigger>
+                    <MenubarContent className="print:hidden">
+                      <MenubarSub>
+                        <MenubarSubTrigger>
+                          <File className="size-4 mr-2" />
+                          Exportar
+                        </MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem onClick={onSaveJSON}>
+                            <FileJson className="size-4 mr-2" />
+                            JSON
+                          </MenubarItem>
+                          <MenubarItem onClick={onSaveHTML}>
+                            <Globe className="size-4 mr-2" />
+                            HTML
+                          </MenubarItem>
+                          <MenubarItem onClick={() => window.print()}>
+                            <Printer className="size-4 mr-2" />
+                            PDF
+                          </MenubarItem>
+                          <MenubarItem onClick={onSaveText}>
+                            <FileText className="size-4 mr-2" />
+                            Text
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      <MenubarItem onClick={onNewDocument}>
+                        <FilePlus className="size-4 mr-2" />
+                        Novo documento
+                      </MenubarItem>
+                      <MenubarSeparator />
+                      <MenubarItem onClick={() => window.print()}>
+                        <Printer className="size-4 mr-2" />
+                        Imprimir <MenubarShortcut>Ctrl+P</MenubarShortcut>
+                      </MenubarItem>
+                    </MenubarContent>
+                  </MenubarMenu>
+                  <MenubarMenu>
+                    <MenubarTrigger className="text-sm font-normal py-0.5 px-[7px] rounded-sm hover:bg-muted h-auto">
+                      Editar
+                    </MenubarTrigger>
+                    <MenubarContent>
+                      <MenubarItem
+                        onClick={() => editor?.chain().focus().undo().run()}
+                      >
+                        <Undo2 className="size-4 mr-2" />
+                        Desfazer <MenubarShortcut>Ctrl+Z</MenubarShortcut>
+                      </MenubarItem>
+                      <MenubarItem
+                        onClick={() => editor?.chain().focus().redo().run()}
+                      >
+                        <Redo2 className="size-4 mr-2" />
+                        Refazer <MenubarShortcut>Ctrl+Y</MenubarShortcut>
+                      </MenubarItem>
+                    </MenubarContent>
+                  </MenubarMenu>
+                  <MenubarMenu>
+                    <MenubarTrigger className="text-sm font-normal py-0.5 px-[7px] rounded-sm hover:bg-muted h-auto">
+                      Inserir
+                    </MenubarTrigger>
+                    <MenubarContent>
+                      <MenubarSub>
+                        <MenubarSubTrigger>Tabela</MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem
+                            onClick={() => insertTable({ rows: 1, cols: 1 })}
+                          >
+                            1x1
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() => insertTable({ rows: 2, cols: 2 })}
+                          >
+                            2x2
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() => insertTable({ rows: 3, cols: 3 })}
+                          >
+                            3x3
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() => insertTable({ rows: 4, cols: 4 })}
+                          >
+                            4x4
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                    </MenubarContent>
+                  </MenubarMenu>
+                  <MenubarMenu>
+                    <MenubarTrigger className="text-sm font-normal py-0.5 px-[7px] rounded-sm hover:bg-muted h-auto">
+                      Formatar
+                    </MenubarTrigger>
+                    <MenubarContent>
+                      <MenubarSub>
+                        <MenubarSubTrigger>
+                          <Text className="size-4 mr-2" />
+                          Texto
+                        </MenubarSubTrigger>
+                        <MenubarSubContent>
+                          <MenubarItem
+                            onClick={() =>
+                              editor?.chain().focus().toggleBold().run()
+                            }
+                          >
+                            <Bold className="size-4 mr-2" />
+                            Negrito <MenubarShortcut>Ctrl+B</MenubarShortcut>
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() =>
+                              editor?.chain().focus().toggleItalic().run()
+                            }
+                          >
+                            <Italic className="size-4 mr-2" />
+                            Itálico <MenubarShortcut>Ctrl+I</MenubarShortcut>
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() =>
+                              editor?.chain().focus().toggleUnderline().run()
+                            }
+                          >
+                            <UnderlineIcon className="size-4 mr-2" />
+                            Sublinhado <MenubarShortcut>Ctrl+U</MenubarShortcut>
+                          </MenubarItem>
+                          <MenubarItem
+                            onClick={() =>
+                              editor?.chain().focus().toggleStrike().run()
+                            }
+                          >
+                            <Strikethrough className="size-4 mr-2" />
+                            Tachado
+                          </MenubarItem>
+                        </MenubarSubContent>
+                      </MenubarSub>
+                      <MenubarItem
+                        onClick={() =>
+                          editor?.chain().focus().unsetAllMarks().run()
+                        }
+                      >
+                        <RemoveFormatting className="size-4 mr-2" />
+                        Remover formatação
+                      </MenubarItem>
+                    </MenubarContent>
+                  </MenubarMenu>
                 </>
-              ) : hasUnsavedChanges ? (
-                <>
-                  <Save className="h-3 w-3 text-orange-500" />
-                  <span>Unsaved changes</span>
-                </>
-              ) : lastSaved ? (
-                <>
-                  <Save className="h-3 w-3 text-green-500" />
-                  <span>Saved {lastSaved.toLocaleTimeString()}</span>
-                </>
-              ) : null}
-            </div>
-            
-            {/* Enhanced connection status */}
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
-              status === 'connected' 
-                ? 'bg-green-100 text-green-800' 
-                : status === 'connecting'
-                ? 'bg-blue-100 text-blue-800'
-                : 'bg-red-100 text-red-800'
-            }`}>
-              {getStatusIcon()}
-              <span>{getStatusText()}</span>
-            </div>
-            
-            {/* Manual save button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleForceSave}
-              disabled={isSaving || !hasUnsavedChanges}
-              className="text-xs"
-            >
-              <Save className="h-3 w-3 mr-1" />
-              Save
-            </Button>
-            
-            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">
-              {doc.ownerId.charAt(0).toUpperCase()}
-            </div>
+              )}
+            </Menubar>
           </div>
         </div>
       </header>
