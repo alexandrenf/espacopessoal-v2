@@ -163,8 +163,42 @@ export const updateContentInternal = internalMutation({
       const document = await ctx.db.get(documentId);
       
       if (!document) {
-        console.log(`Document not found with ID: ${args.id}`);
-        throw new ConvexError(`Document not found with ID: ${args.id}`);
+        console.log(`Document not found with ID: ${args.id} - checking by roomId`);
+        
+        // Check if there's a document with this ID in roomId field instead
+        const docByRoomId = await ctx.db.query("documents").filter(q => q.eq(q.field("roomId"), args.id)).first();
+        if (docByRoomId) {
+          console.log(`Found document by roomId: ${docByRoomId.title} (${docByRoomId._id}), updating it`);
+          const result = await ctx.db.patch(docByRoomId._id, { 
+            initialContent: args.content,
+            updatedAt: Date.now(),
+          });
+          console.log(`Successfully updated document via roomId ${args.id}`);
+          return result;
+        }
+        
+        console.log(`Document not found by ID or roomId: ${args.id} - this document may not have been created through the proper UI flow`);
+        
+        // For now, we'll create a basic document record to allow saving
+        // In a production system, you might want to handle this differently
+        try {
+          const now = Date.now();
+          const newDocumentId = await ctx.db.insert("documents", {
+            title: "Untitled Document (Auto-created)",
+            ownerId: args.userId || "demo-user",
+            initialContent: args.content,
+            roomId: args.id,
+            createdAt: now,
+            updatedAt: now,
+          });
+          
+          console.log(`Successfully created new document with ID: ${newDocumentId}`);
+          console.log(`Note: Original ID ${args.id} was not found, created new document instead`);
+          return newDocumentId;
+        } catch (createError) {
+          console.error(`Failed to create new document:`, createError);
+          throw new ConvexError(`Document ${args.id} not found and could not create replacement`);
+        }
       }
       
       console.log(`Successfully found document: ${document.title}`);
@@ -193,6 +227,13 @@ export const getByIdInternal = internalQuery({
   handler: async (ctx, args) => {
     console.log(`Attempting to get document with ID: ${args.id}`);
     
+    // First, let's see what documents actually exist
+    const allDocs = await ctx.db.query("documents").collect();
+    console.log(`Total documents in database: ${allDocs.length}`);
+    if (allDocs.length > 0) {
+      console.log(`Sample document IDs:`, allDocs.slice(0, 3).map(d => `${d._id} (${d.title})`));
+    }
+    
     // Validate that the ID looks like a Convex ID
     if (!args.id || typeof args.id !== 'string' || args.id.length < 20) {
       throw new ConvexError(`Invalid document ID format: ${args.id}`);
@@ -201,11 +242,19 @@ export const getByIdInternal = internalQuery({
     try {
       // Convert string ID to Convex ID
       const documentId = args.id as Id<"documents">;
+      console.log(`Converted to Convex ID type: ${documentId}`);
+      
       const document = await ctx.db.get(documentId);
       
       if (!document) {
-        console.log(`Document not found with ID: ${args.id}`);
-        throw new ConvexError(`Document not found with ID: ${args.id}`);
+        console.log(`Document not found with ID: ${args.id} - returning null to indicate document should be created`);
+        // Check if there's a document with this ID in roomId field instead
+        const docByRoomId = await ctx.db.query("documents").filter(q => q.eq(q.field("roomId"), args.id)).first();
+        if (docByRoomId) {
+          console.log(`Found document by roomId: ${docByRoomId.title} (${docByRoomId._id})`);
+          return docByRoomId;
+        }
+        return null;
       }
       
       console.log(`Successfully found document: ${document.title}`);

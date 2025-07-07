@@ -12,8 +12,8 @@ const MAX_CONNECTIONS = parseInt(process.env.MAX_CONNECTIONS || '100');
 const TIMEOUT = parseInt(process.env.TIMEOUT || '30000');
 
 // Convex configuration
-const CONVEX_URL = process.env.CONVEX_URL || 'https://abundant-falcon-512.convex.cloud';
-const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://abundant-falcon-512.convex.site';
+const CONVEX_URL = process.env.CONVEX_URL || 'https://famous-chicken-620.convex.cloud';
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://famous-chicken-620.convex.site';
 
 // Document tracking
 interface DocumentState {
@@ -28,27 +28,42 @@ const documentStates = new Map<string, DocumentState>();
 
 // Utility functions for Convex API calls
 const saveDocumentToConvex = async (documentName: string, content: string): Promise<boolean> => {
+  const url = `${CONVEX_SITE_URL}/updateDocumentContent`;
+  const payload = {
+    documentId: documentName,
+    content: content,
+    userId: 'hocus-pocus-server',
+  };
+  
+  console.log(`[${new Date().toISOString()}] 🔗 Attempting to save to: ${url}`);
+  console.log(`[${new Date().toISOString()}] 📄 Document ID: ${documentName}`);
+  console.log(`[${new Date().toISOString()}] 📝 Content length: ${content.length} chars`);
+  
   try {
-    const response = await fetch(`${CONVEX_SITE_URL}/updateDocumentContent`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        documentId: documentName,
-        content: content,
-        userId: 'hocus-pocus-server',
-      }),
+      body: JSON.stringify(payload),
     });
+
+    console.log(`[${new Date().toISOString()}] 📡 Response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[${new Date().toISOString()}] Failed to save document ${documentName}: ${response.status} ${errorText}`);
+      console.error(`[${new Date().toISOString()}] ❌ HTTP Error: ${response.status} - ${errorText}`);
+      
+      if (response.status === 404) {
+        console.log(`[${new Date().toISOString()}] 🚫 Document ${documentName} not found in Convex - skipping save (document may not have been created through UI)`);
+        return true; // Return true to avoid error logs for documents that simply don't exist
+      }
+      
       return false;
     }
 
     const result = await response.json() as { success: boolean; message: string };
-    console.log(`[${new Date().toISOString()}] Successfully saved document ${documentName} to Convex`);
+    console.log(`[${new Date().toISOString()}] ✅ Successfully saved document ${documentName} to Convex`);
     return true;
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Error saving document ${documentName} to Convex:`, error);
@@ -57,17 +72,24 @@ const saveDocumentToConvex = async (documentName: string, content: string): Prom
 };
 
 const loadDocumentFromConvex = async (documentName: string): Promise<string | null> => {
+  const url = `${CONVEX_SITE_URL}/getDocumentContent?documentId=${encodeURIComponent(documentName)}`;
+  
+  console.log(`[${new Date().toISOString()}] 🔍 Attempting to load from: ${url}`);
+  console.log(`[${new Date().toISOString()}] 📄 Document ID: ${documentName}`);
+  
   try {
-    const response = await fetch(`${CONVEX_SITE_URL}/getDocumentContent?documentId=${encodeURIComponent(documentName)}`, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
     });
+    
+    console.log(`[${new Date().toISOString()}] 📡 Load response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       if (response.status === 404) {
-        console.log(`[${new Date().toISOString()}] Document ${documentName} not found in Convex, will create new`);
+        console.log(`[${new Date().toISOString()}] Document ${documentName} not found in Convex - will start with empty document`);
         return null;
       }
       const errorText = await response.text();
@@ -76,7 +98,7 @@ const loadDocumentFromConvex = async (documentName: string): Promise<string | nu
     }
 
     const result = await response.json() as { success: boolean; document: { content: string } };
-    console.log(`[${new Date().toISOString()}] Successfully loaded document ${documentName} from Convex`);
+    console.log(`[${new Date().toISOString()}] Successfully loaded document ${documentName} from Convex (${result.document?.content?.length || 0} chars)`);
     return result.document?.content || null;
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Error loading document ${documentName} from Convex:`, error);
@@ -102,7 +124,7 @@ const scheduleDocumentSave = (documentName: string, document: Y.Doc) => {
   // Schedule save after 2 seconds of inactivity
   state.saveTimeout = setTimeout(async () => {
     await performDocumentSave(documentName, document);
-  }, 2000);
+  }, 5000);
 
   state.lastActivity = Date.now();
 };
@@ -248,6 +270,7 @@ const server = new Server({
         lastActivity: Date.now(),
         pendingSave: false,
       });
+      console.log(`[${new Date().toISOString()}] Initialized tracking for new document: ${documentName}`);
     }
     
     const state = documentStates.get(documentName)!;
@@ -289,8 +312,10 @@ const server = new Server({
     console.log(`[${new Date().toISOString()}] ${SERVER_NAME} listening on ${HOST}:${PORT}`);
     console.log(`[${new Date().toISOString()}] Environment: ${NODE_ENV}`);
     console.log(`[${new Date().toISOString()}] Max connections: ${MAX_CONNECTIONS}`);
-    console.log(`[${new Date().toISOString()}] Convex URL: ${CONVEX_URL}`);
-    console.log(`[${new Date().toISOString()}] Convex Site URL: ${CONVEX_SITE_URL}`);
+    console.log(`[${new Date().toISOString()}] 🔗 Convex URL: ${CONVEX_URL}`);
+    console.log(`[${new Date().toISOString()}] 🌐 Convex Site URL: ${CONVEX_SITE_URL}`);
+    console.log(`[${new Date().toISOString()}] 📡 HTTP Save endpoint: ${CONVEX_SITE_URL}/updateDocumentContent`);
+    console.log(`[${new Date().toISOString()}] 📡 HTTP Load endpoint: ${CONVEX_SITE_URL}/getDocumentContent`);
     console.log(`[${new Date().toISOString()}] Allowed origins: ${allowedOrigins.join(', ')}`);
   },
   

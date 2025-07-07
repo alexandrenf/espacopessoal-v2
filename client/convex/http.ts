@@ -15,6 +15,8 @@ const updateDocumentContent = httpAction(async (ctx, request) => {
     const body = await request.json();
     const { documentId, content, userId } = body;
 
+    console.log(`HTTP updateDocumentContent called with documentId: ${documentId}, content length: ${content?.length || 0}`);
+
     if (!documentId || typeof content !== "string") {
       return new Response(
         JSON.stringify({ error: "Missing required fields: documentId and content" }),
@@ -26,11 +28,14 @@ const updateDocumentContent = httpAction(async (ctx, request) => {
     }
 
     // Call the internal mutation to update the document
-    await ctx.runMutation(internal.documents.updateContentInternal, {
+    console.log(`Calling updateContentInternal for document: ${documentId}`);
+    const result = await ctx.runMutation(internal.documents.updateContentInternal, {
       id: documentId,
       content,
       userId: userId || "demo-user",
     });
+    
+    console.log(`updateContentInternal completed successfully for ${documentId}`);
 
     return new Response(
       JSON.stringify({ success: true, message: "Document updated successfully" }),
@@ -72,6 +77,8 @@ const getDocumentContent = httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const documentId = url.searchParams.get("documentId");
 
+    console.log(`HTTP getDocumentContent called with documentId: ${documentId}`);
+
     if (!documentId) {
       return new Response(
         JSON.stringify({ error: "Missing documentId parameter" }),
@@ -83,11 +90,15 @@ const getDocumentContent = httpAction(async (ctx, request) => {
     }
 
     // Call the internal query to get the document
+    console.log(`Calling getByIdInternal for document: ${documentId}`);
     const document = await ctx.runQuery(internal.documents.getByIdInternal, {
       id: documentId,
     });
+    
+    console.log(`getByIdInternal result for ${documentId}:`, document ? `Found document "${document.title}"` : 'Document not found');
 
     if (!document) {
+      console.log(`Document ${documentId} not found, returning 404`);
       return new Response(
         JSON.stringify({ error: "Document not found" }),
         { 

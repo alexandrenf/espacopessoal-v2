@@ -422,11 +422,6 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
             </div>
             
             <div className="flex items-center gap-4">
-              {/* Save status indicator - Server handles automatic saving */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Save className="h-3 w-3 text-green-500" />
-                <span>Auto-saved by server</span>
-              </div>
               
               {/* Enhanced connection status */}
               <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
