@@ -150,22 +150,38 @@ export const updateContentInternal = internalMutation({
     userId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    console.log(`Attempting to update document with ID: ${args.id}`);
+    
+    // Validate that the ID looks like a Convex ID
+    if (!args.id || typeof args.id !== 'string' || args.id.length < 20) {
+      throw new ConvexError(`Invalid document ID format: ${args.id}`);
+    }
+    
     try {
-      // Convert string ID to Convex ID and validate
+      // Convert string ID to Convex ID
       const documentId = args.id as Id<"documents">;
       const document = await ctx.db.get(documentId);
       
       if (!document) {
-        throw new ConvexError("Document not found!");
+        console.log(`Document not found with ID: ${args.id}`);
+        throw new ConvexError(`Document not found with ID: ${args.id}`);
       }
       
-      return await ctx.db.patch(documentId, { 
+      console.log(`Successfully found document: ${document.title}`);
+      
+      const result = await ctx.db.patch(documentId, { 
         initialContent: args.content,
         updatedAt: Date.now(),
       });
+      
+      console.log(`Successfully updated document ${args.id}`);
+      return result;
     } catch (error) {
       console.error("Error in updateContentInternal:", error);
-      throw new ConvexError("Invalid document ID or document not found");
+      if (error instanceof ConvexError) {
+        throw error;
+      }
+      throw new ConvexError(`Failed to update document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   },
 });
@@ -175,19 +191,31 @@ export const getByIdInternal = internalQuery({
     id: v.string(), // Accept string ID from HTTP action
   },
   handler: async (ctx, args) => {
+    console.log(`Attempting to get document with ID: ${args.id}`);
+    
+    // Validate that the ID looks like a Convex ID
+    if (!args.id || typeof args.id !== 'string' || args.id.length < 20) {
+      throw new ConvexError(`Invalid document ID format: ${args.id}`);
+    }
+    
     try {
-      // Convert string ID to Convex ID and validate
+      // Convert string ID to Convex ID
       const documentId = args.id as Id<"documents">;
       const document = await ctx.db.get(documentId);
       
       if (!document) {
-        throw new ConvexError("Document not found!");
+        console.log(`Document not found with ID: ${args.id}`);
+        throw new ConvexError(`Document not found with ID: ${args.id}`);
       }
       
+      console.log(`Successfully found document: ${document.title}`);
       return document;
     } catch (error) {
       console.error("Error in getByIdInternal:", error);
-      throw new ConvexError("Invalid document ID or document not found");
+      if (error instanceof ConvexError) {
+        throw error;
+      }
+      throw new ConvexError(`Failed to get document: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   },
 }); 
