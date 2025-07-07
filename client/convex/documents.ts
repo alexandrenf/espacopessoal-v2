@@ -1,6 +1,7 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
 
 // Simple user ID for demo purposes (since no auth yet)
 const DEFAULT_USER_ID = "demo-user";
@@ -138,5 +139,55 @@ export const updateContent = mutation({
       initialContent: args.content,
       updatedAt: Date.now(),
     });
+  },
+});
+
+// Internal functions for HTTP actions
+export const updateContentInternal = internalMutation({
+  args: {
+    id: v.string(), // Accept string ID from HTTP action
+    content: v.string(),
+    userId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Convert string ID to Convex ID and validate
+      const documentId = args.id as Id<"documents">;
+      const document = await ctx.db.get(documentId);
+      
+      if (!document) {
+        throw new ConvexError("Document not found!");
+      }
+      
+      return await ctx.db.patch(documentId, { 
+        initialContent: args.content,
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      console.error("Error in updateContentInternal:", error);
+      throw new ConvexError("Invalid document ID or document not found");
+    }
+  },
+});
+
+export const getByIdInternal = internalQuery({
+  args: { 
+    id: v.string(), // Accept string ID from HTTP action
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Convert string ID to Convex ID and validate
+      const documentId = args.id as Id<"documents">;
+      const document = await ctx.db.get(documentId);
+      
+      if (!document) {
+        throw new ConvexError("Document not found!");
+      }
+      
+      return document;
+    } catch (error) {
+      console.error("Error in getByIdInternal:", error);
+      throw new ConvexError("Invalid document ID or document not found");
+    }
   },
 }); 

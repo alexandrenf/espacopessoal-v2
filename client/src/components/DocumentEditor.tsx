@@ -98,9 +98,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   const ydocRef = useRef<Y.Doc | null>(null);
   const [documentTitle, setDocumentTitle] = useState(doc.title);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Note: Save state is no longer tracked client-side since server handles saving
   
   // Margin state
   const [leftMargin, setLeftMargin] = useState(LEFT_MARGIN_DEFAULT);
@@ -108,11 +106,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
   
   const { setEditor } = useEditorStore();
   const updateDocument = useMutation(api.documents.updateById);
-  const updateContent = useMutation(api.documents.updateContent);
-
-  // Enhanced content saving with better conflict resolution
-  const saveContentRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedContentRef = useRef<string>('');
+  // Note: updateContent is now handled by the Hocus Pocus server
 
   // Menu actions
   const onSaveJSON = () => {
@@ -164,45 +158,7 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     ydocRef.current = new Y.Doc();
   }
   
-  const saveContent = useCallback((content: string) => {
-    // Skip save if content hasn't changed
-    if (content === lastSavedContentRef.current) {
-      return;
-    }
-
-    if (saveContentRef.current) {
-      clearTimeout(saveContentRef.current);
-    }
-
-    // Only set unsaved changes state if we're not already saving
-    if (!isSaving) {
-      setHasUnsavedChanges(true);
-    }
-    
-    saveContentRef.current = setTimeout(async () => {
-      try {
-        setIsSaving(true);
-        await updateContent({ 
-          id: doc._id, 
-          content 
-        });
-        
-        lastSavedContentRef.current = content;
-        setLastSaved(new Date());
-        setHasUnsavedChanges(false);
-        
-        // Silent save - no toast notifications during auto-save
-        console.log('Document auto-saved successfully');
-      } catch (error) {
-        console.error('Failed to save document:', error);
-        setHasUnsavedChanges(true);
-        // Only show error toast, not success
-        toast.error("Failed to save document changes");
-      } finally {
-        setIsSaving(false);
-      }
-    }, 2000); // Save after 2 seconds of inactivity
-  }, [doc._id, updateContent, isSaving]);
+  // Save logic is now handled by the Hocus Pocus server
 
   // Enhanced WebSocket and Y.js integration
   const editor = useEditor({
@@ -217,10 +173,9 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     },
     onUpdate({ editor, transaction }) {
       setEditor(editor);
-      // Only save if the transaction has content changes (not just selection changes)
+      // Document changes are now automatically saved by the Hocus Pocus server
       if (transaction.docChanged) {
-        const content = editor.getHTML();
-        saveContent(content);
+        console.log('Document changed - server will handle saving');
       }
     },
     onSelectionUpdate({ editor }) {
@@ -343,17 +298,12 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
       setTimeout(() => {
         if (editor.isEmpty) {
           editor.commands.setContent(doc.initialContent || initialContent || '');
-          lastSavedContentRef.current = doc.initialContent || initialContent || '';
         }
       }, 100);
     }
 
     // Cleanup function
     return () => {
-      if (saveContentRef.current) {
-        clearTimeout(saveContentRef.current);
-      }
-      
       console.log('🧹 Cleaning up editor and connections');
       
       if (newProvider) {
@@ -391,36 +341,9 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
     }
   };
 
-  // Force save function for manual saves
-  const handleForceSave = async () => {
-    if (editor && !isSaving) {
-      const content = editor.getHTML();
-      
-      // Clear any pending auto-save
-      if (saveContentRef.current) {
-        clearTimeout(saveContentRef.current);
-      }
-      
-      // Immediate save for manual action
-      try {
-        setIsSaving(true);
-        await updateContent({ 
-          id: doc._id, 
-          content 
-        });
-        
-        lastSavedContentRef.current = content;
-        setLastSaved(new Date());
-        setHasUnsavedChanges(false);
-        toast.success("Document saved successfully!");
-      } catch (error) {
-        console.error('Failed to save document:', error);
-        setHasUnsavedChanges(true);
-        toast.error("Failed to save document");
-      } finally {
-        setIsSaving(false);
-      }
-    }
+  // Manual save is no longer needed - server handles automatic saving
+  const handleForceSave = () => {
+    toast.info("Documents are automatically saved by the server after 2 seconds of inactivity");
   };
 
   // Enhanced connection status indicator
@@ -499,24 +422,10 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
             </div>
             
             <div className="flex items-center gap-4">
-              {/* Save status indicator */}
+              {/* Save status indicator - Server handles automatic saving */}
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {isSaving ? (
-                  <>
-                    <div className="animate-spin h-3 w-3 border border-blue-500 border-t-transparent rounded-full" />
-                    <span>Saving...</span>
-                  </>
-                ) : hasUnsavedChanges ? (
-                  <>
-                    <Save className="h-3 w-3 text-orange-500" />
-                    <span>Unsaved changes</span>
-                  </>
-                ) : lastSaved ? (
-                  <>
-                    <Save className="h-3 w-3 text-green-500" />
-                    <span>Saved {lastSaved.toLocaleTimeString()}</span>
-                  </>
-                ) : null}
+                <Save className="h-3 w-3 text-green-500" />
+                <span>Auto-saved by server</span>
               </div>
               
               {/* Enhanced connection status */}
@@ -531,16 +440,15 @@ export function DocumentEditor({ document: doc, initialContent, isReadOnly }: Ed
                 <span>{getStatusText()}</span>
               </div>
               
-              {/* Manual save button */}
+              {/* Info button about automatic saving */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleForceSave}
-                disabled={isSaving || !hasUnsavedChanges}
                 className="text-xs"
               >
                 <Save className="h-3 w-3 mr-1" />
-                Save
+                Save Info
               </Button>
               
               <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm">

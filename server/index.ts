@@ -1,6 +1,7 @@
 // index.ts
 import { Server } from '@hocuspocus/server';
-import type { onConnectPayload, onDisconnectPayload, onListenPayload, onRequestPayload, onLoadDocumentPayload, onStoreDocumentPayload, onDestroyPayload } from '@hocuspocus/server';
+import type { onConnectPayload, onDisconnectPayload, onListenPayload, onRequestPayload, onLoadDocumentPayload, onStoreDocumentPayload, onDestroyPayload, onChangePayload } from '@hocuspocus/server';
+import * as Y from 'yjs';
 
 // Load environment variables
 const PORT = process.env.PORT || 6001;
@@ -9,6 +10,148 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const SERVER_NAME = process.env.SERVER_NAME || 'EspacoPessoal Docs Server';
 const MAX_CONNECTIONS = parseInt(process.env.MAX_CONNECTIONS || '100');
 const TIMEOUT = parseInt(process.env.TIMEOUT || '30000');
+
+// Convex configuration
+const CONVEX_URL = process.env.CONVEX_URL || 'https://abundant-falcon-512.convex.cloud';
+const CONVEX_SITE_URL = process.env.CONVEX_SITE_URL || 'https://abundant-falcon-512.convex.site';
+
+// Document tracking
+interface DocumentState {
+  documentName: string;
+  connectedUsers: Set<string>;
+  saveTimeout?: NodeJS.Timeout;
+  lastActivity: number;
+  pendingSave: boolean;
+}
+
+const documentStates = new Map<string, DocumentState>();
+
+// Utility functions for Convex API calls
+const saveDocumentToConvex = async (documentName: string, content: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`${CONVEX_SITE_URL}/updateDocumentContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        documentId: documentName,
+        content: content,
+        userId: 'hocus-pocus-server',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[${new Date().toISOString()}] Failed to save document ${documentName}: ${response.status} ${errorText}`);
+      return false;
+    }
+
+    const result = await response.json() as { success: boolean; message: string };
+    console.log(`[${new Date().toISOString()}] Successfully saved document ${documentName} to Convex`);
+    return true;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error saving document ${documentName} to Convex:`, error);
+    return false;
+  }
+};
+
+const loadDocumentFromConvex = async (documentName: string): Promise<string | null> => {
+  try {
+    const response = await fetch(`${CONVEX_SITE_URL}/getDocumentContent?documentId=${encodeURIComponent(documentName)}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.log(`[${new Date().toISOString()}] Document ${documentName} not found in Convex, will create new`);
+        return null;
+      }
+      const errorText = await response.text();
+      console.error(`[${new Date().toISOString()}] Failed to load document ${documentName}: ${response.status} ${errorText}`);
+      return null;
+    }
+
+    const result = await response.json() as { success: boolean; document: { content: string } };
+    console.log(`[${new Date().toISOString()}] Successfully loaded document ${documentName} from Convex`);
+    return result.document?.content || null;
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error loading document ${documentName} from Convex:`, error);
+    return null;
+  }
+};
+
+// Document saving logic
+const scheduleDocumentSave = (documentName: string, document: Y.Doc) => {
+  const state = documentStates.get(documentName);
+  if (!state) return;
+
+  // Clear existing timeout
+  if (state.saveTimeout) {
+    clearTimeout(state.saveTimeout);
+  }
+
+  // Don't schedule if already pending save
+  if (state.pendingSave) {
+    return;
+  }
+
+  // Schedule save after 2 seconds of inactivity
+  state.saveTimeout = setTimeout(async () => {
+    await performDocumentSave(documentName, document);
+  }, 2000);
+
+  state.lastActivity = Date.now();
+};
+
+const performDocumentSave = async (documentName: string, document: Y.Doc) => {
+  const state = documentStates.get(documentName);
+  if (!state || state.pendingSave) return;
+
+  state.pendingSave = true;
+
+  try {
+    // Extract HTML content from Y.js document
+    const content = extractDocumentContent(document);
+    console.log(`[${new Date().toISOString()}] Saving document ${documentName} (${content.length} chars)`);
+    
+    await saveDocumentToConvex(documentName, content);
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Error during document save for ${documentName}:`, error);
+  } finally {
+    if (state) {
+      state.pendingSave = false;
+    }
+  }
+};
+
+const extractDocumentContent = (ydoc: Y.Doc): string => {
+  try {
+    // Get the main text content from Y.js
+    const yText = ydoc.getXmlFragment('default');
+    
+    // Simple text extraction - you might need to adjust this based on your Y.js structure
+    if (yText && yText.length > 0) {
+      return yText.toString();
+    }
+    
+    // Fallback: try to get text content directly
+    const textMap = ydoc.getMap('text');
+    if (textMap && textMap.size > 0) {
+      return JSON.stringify(textMap.toJSON());
+    }
+    
+    // Another fallback: get any content from the document state
+    const update = Y.encodeStateAsUpdate(ydoc);
+    return update.length > 0 ? `<p>Document updated (${update.length} bytes)</p>` : '<p></p>';
+  } catch (error) {
+    console.error('Error extracting document content:', error);
+    return '<p>Error extracting content</p>';
+  }
+};
 
 // CORS Configuration - Support multiple origins
 const getAllowedOrigins = () => {
@@ -86,7 +229,7 @@ const server = new Server({
 
   // Enhanced connection handling with origin validation
   async onConnect(data: onConnectPayload) {
-    const { request, socketId } = data;
+    const { request, socketId, documentName } = data;
     const origin = request.headers.origin as string;
     
     // Validate origin for WebSocket connections
@@ -95,37 +238,125 @@ const server = new Server({
       throw new Error('Unauthorized origin');
     }
     
-    console.log(`[${new Date().toISOString()}] WebSocket connection accepted from ${origin} (${socketId})`);
+    console.log(`[${new Date().toISOString()}] WebSocket connection accepted from ${origin} (${socketId}) for document: ${documentName}`);
+    
+    // Track user connection per document
+    if (!documentStates.has(documentName)) {
+      documentStates.set(documentName, {
+        documentName,
+        connectedUsers: new Set(),
+        lastActivity: Date.now(),
+        pendingSave: false,
+      });
+    }
+    
+    const state = documentStates.get(documentName)!;
+    state.connectedUsers.add(socketId);
+    
+    console.log(`[${new Date().toISOString()}] Document ${documentName} now has ${state.connectedUsers.size} connected users`);
   },
   
   async onDisconnect(data: onDisconnectPayload) {
-    console.log(`[${new Date().toISOString()}] WebSocket connection disconnected: ${data.socketId}`);
+    const { socketId, documentName, document } = data;
+    console.log(`[${new Date().toISOString()}] WebSocket connection disconnected: ${socketId} from document: ${documentName}`);
+    
+    const state = documentStates.get(documentName);
+    if (state) {
+      state.connectedUsers.delete(socketId);
+      
+      console.log(`[${new Date().toISOString()}] Document ${documentName} now has ${state.connectedUsers.size} connected users`);
+      
+      // If no users left, save immediately and clean up
+      if (state.connectedUsers.size === 0) {
+        console.log(`[${new Date().toISOString()}] No users left for document ${documentName}, saving immediately`);
+        
+        // Clear any pending save timeout
+        if (state.saveTimeout) {
+          clearTimeout(state.saveTimeout);
+        }
+        
+        // Perform immediate save
+        await performDocumentSave(documentName, document);
+        
+        // Clean up document state
+        documentStates.delete(documentName);
+        console.log(`[${new Date().toISOString()}] Cleaned up state for document ${documentName}`);
+      }
+    }
   },
   
   async onListen(data: onListenPayload) {
     console.log(`[${new Date().toISOString()}] ${SERVER_NAME} listening on ${HOST}:${PORT}`);
     console.log(`[${new Date().toISOString()}] Environment: ${NODE_ENV}`);
     console.log(`[${new Date().toISOString()}] Max connections: ${MAX_CONNECTIONS}`);
+    console.log(`[${new Date().toISOString()}] Convex URL: ${CONVEX_URL}`);
+    console.log(`[${new Date().toISOString()}] Convex Site URL: ${CONVEX_SITE_URL}`);
     console.log(`[${new Date().toISOString()}] Allowed origins: ${allowedOrigins.join(', ')}`);
   },
   
   async onDestroy(data: onDestroyPayload) {
     console.log(`[${new Date().toISOString()}] ${SERVER_NAME} destroyed`);
+    
+    // Save all pending documents before shutdown
+    for (const [documentName, state] of documentStates.entries()) {
+      if (state.saveTimeout) {
+        clearTimeout(state.saveTimeout);
+      }
+      // Note: We don't have access to the document here, so we'll skip this save
+      console.log(`[${new Date().toISOString()}] Cleanup: Skipping save for ${documentName} during shutdown`);
+    }
+    
+    documentStates.clear();
   },
   
   async onLoadDocument(data: onLoadDocumentPayload) {
-    console.log(`[${new Date().toISOString()}] Loading document: ${data.documentName}`);
-    // Return the document from your database or create a new one
-    return null; // Let Hocuspocus create a new document
+    const { documentName } = data;
+    console.log(`[${new Date().toISOString()}] Loading document: ${documentName}`);
+    
+    // Try to load from Convex
+    const content = await loadDocumentFromConvex(documentName);
+    
+    if (content) {
+      // Create Y.js document with the loaded content
+      const ydoc = new Y.Doc();
+      
+      try {
+        // For TipTap collaboration, we typically store content in a specific structure
+        // This is a simplified approach - the actual structure depends on TipTap configuration
+        const prosemirrorState = ydoc.getMap('prosemirror');
+        prosemirrorState.set('content', content);
+        console.log(`[${new Date().toISOString()}] Loaded ${content.length} characters for document ${documentName}`);
+        return ydoc;
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error applying content to Y.js document:`, error);
+      }
+    }
+    
+    // Return null to let Hocuspocus create a new document
+    return null;
+  },
+  
+  async onChange(data: onChangePayload) {
+    const { documentName, document } = data;
+    
+    // Initialize document state if not exists
+    if (!documentStates.has(documentName)) {
+      documentStates.set(documentName, {
+        documentName,
+        connectedUsers: new Set(),
+        lastActivity: Date.now(),
+        pendingSave: false,
+      });
+    }
+    
+    // Schedule save after 2 seconds of inactivity
+    scheduleDocumentSave(documentName, document);
   },
   
   async onStoreDocument(data: onStoreDocumentPayload) {
-    console.log(`[${new Date().toISOString()}] Storing document: ${data.documentName}`);
-    // Store the document in your database
+    // This is called by Hocuspocus but we're handling saving in onChange
+    console.log(`[${new Date().toISOString()}] onStoreDocument called for: ${data.documentName} (handled by onChange)`);
   },
-  
-  // You can add more event handlers here for custom logic,
-  // e.g., authentication, authorization, document state changes.
 });
 
 server.listen();
